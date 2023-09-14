@@ -1,0 +1,16 @@
+{
+    "ip": "",
+    "displayed_ip": "",
+    "base_port": 2302,
+
+    "db_ip": "",
+    "db_port": 3306,
+    "db_user": "",
+    "db_pass": "",
+    "db_db": "",
+
+    "service_role_id": 0,
+    "channel_id": 0,
+
+    "token": ""
+}
