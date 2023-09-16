@@ -13,3 +13,10 @@ class Admin(Base, Wrapper):
 
     id = sa.Column(sa.Integer, primary_key=True, autoincrement=True)
     uid = sa.Column(sa.VARCHAR(100), nullable=False)
+
+class Mod(Base, Wrapper):
+    __tablename__ = "mods"
+
+    id = sa.Column(sa.Integer, primary_key=True, autoincrement=True)
+    folder_name = sa.Column(sa.Text, nullable=False)
+    mod_id = sa.Column(sa.Text, nullable=False)
