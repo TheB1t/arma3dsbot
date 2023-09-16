@@ -2,7 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import threading
 
-from db_tables import Admin, Base
+from db_tables import Admin, Mod, Base
 from utils import semaphored, sessioned, threaded
 
 class Database:
@@ -52,3 +52,13 @@ class Database:
             return True
     
         return False
+    
+    @sessioned
+    def getMods(self, session):
+        mods = session.query(Mod).all()
+
+        tmp = {}
+        for mod in mods:
+            tmp[mod.folder_name] = mod.mod_id
+
+        return tmp

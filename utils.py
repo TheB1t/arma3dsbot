@@ -1,4 +1,6 @@
 import threading
+import asyncio
+import typing
 from functools import wraps
 
 def mutexed(func):
@@ -25,4 +27,10 @@ def threaded(func):
         t = threading.Thread(target=func, args=args, kwargs=kwargs)
         t.start()
         return t
+    return wrapper
+
+def to_thread(func: typing.Callable) -> typing.Coroutine:
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        return await asyncio.to_thread(func, *args, **kwargs)
     return wrapper
