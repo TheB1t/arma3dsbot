@@ -1,6 +1,7 @@
 import threading
 import asyncio
 import typing
+import aiohttp
 from functools import wraps
 
 def mutexed(func):
@@ -34,3 +35,8 @@ def to_thread(func: typing.Callable) -> typing.Coroutine:
     async def wrapper(*args, **kwargs):
         return await asyncio.to_thread(func, *args, **kwargs)
     return wrapper
+
+async def fetch_url(url):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                return await response.text()

@@ -4,8 +4,9 @@ import re
 import shutil
 import typing
 import functools
+import asyncio
 
-from utils import to_thread
+from utils import to_thread, fetch_url
 from datetime import datetime
 from urllib import request
 
@@ -32,25 +33,45 @@ class ModUpdater:
     def __del__(self):
         self.__clean()
 
-    def __generate_steamcmd_runscript(self, user, passwd, steam_2fa):
+    async def __check_one_mod(self, mod):
+        path = "{}/{}".format(A3_WORKSHOP_DIR, mod["id"])
+
+        if os.path.isdir(path):
+            if await self.__mod_needs_update(mod["id"], path):
+                shutil.rmtree(path)
+            else:
+                mod["status"] = "UP-TO-DATE"
+                print("No update required for \"{}\" ({})... SKIPPING".format(mod["folder"], mod["id"]))
+                return [False, mod]
+        
+        print("Required update for \"{}\" ({})".format(mod["folder"], mod["id"]))
+        return [True, mod]
+    
+    async def __check_mods_parallel(self):
+        tasks = []
+
+        for mod in self.mods:
+            task = asyncio.ensure_future(self.__check_one_mod(mod))
+            tasks.append(task)
+
+        results = await asyncio.gather(*tasks)
+        return results
+
+    async def __generate_steamcmd_runscript(self, user, passwd, steam_2fa):
         lines = [
             f"login {user} {passwd} {steam_2fa}",
             f"force_install_dir {A3_SERVER_DIR}",
         ]
 
-        for mod in self.mods:
-            path = "{}/{}".format(A3_WORKSHOP_DIR, mod["id"])
+        
+        answers = await self.__check_mods_parallel()
 
-            if os.path.isdir(path):
-                if self.__mod_needs_update(mod["id"], path):
-                    shutil.rmtree(path)
-                else:
-                    mod["status"] = "UP-TO-DATE"
-                    print("No update required for \"{}\" ({})... SKIPPING".format(mod["folder"], mod["id"]))
-                    continue
-            
-            mod["status"] = "UPDATED"
-            lines.append(f"workshop_download_item {A3_WORKSHOP_ID} {mod['id']} validate")
+        for answer in answers:
+            if (not answer[0]):
+                continue
+
+            answer[1]["status"] = "UPDATED"
+            lines.append(f"workshop_download_item {A3_WORKSHOP_ID} {answer[1]['id']} validate")
 
         lines.append("quit")
 
@@ -73,23 +94,17 @@ class ModUpdater:
             print("runscript not found")
             return ""
         
-        try:
-            out = subprocess.run(f"{STEAM_CMD} +runscript {RUNSCRIPT_PATH}", check=True, text=True, capture_output=True, shell=True)
+        os.system(f"{STEAM_CMD} +runscript {RUNSCRIPT_PATH}")
 
-            for mod in self.mods:
-                path = "{}/{}".format(A3_WORKSHOP_DIR, mod["id"])
+        for mod in self.mods:
+            path = "{}/{}".format(A3_WORKSHOP_DIR, mod["id"])
 
-                if not os.path.isdir(path):
-                    mod["status"] = "FAILED"
+            if not os.path.isdir(path):
+                mod["status"] = "FAILED"
 
-            return out.stdout
-        except subprocess.CalledProcessError as e:
-            return e.stderr
-
-    def __mod_needs_update(self, mod_id, path):
+    async def __mod_needs_update(self, mod_id, path):
         if os.path.isdir(path):
-            response = request.urlopen("{}/{}".format(WORKSHOP_CHANGELOG_URL, mod_id)).read()
-            response = response.decode("utf-8")
+            response = await fetch_url("{}/{}".format(WORKSHOP_CHANGELOG_URL, mod_id))
             match = UPDATE_PATTERN.search(response)
 
             if match:
@@ -102,7 +117,14 @@ class ModUpdater:
 
     @to_thread
     def __lowercase_workshop_dir(self):
-        os.system("(cd {} && find . -depth -exec rename -v 's/(.*)\/([^\/]*)/$1\/\L$2/' {{}} \;)".format(A3_WORKSHOP_DIR))
+        for mod in self.mods:
+            real_path = "{}/{}".format(A3_WORKSHOP_DIR, mod["id"])
+
+            if mod["status"] == "UPDATED":
+                print("Convert files to lower for mod {}".format(mod["folder"]))
+                os.system("(cd {} && find . -depth -exec rename -v 's/(.*)\/([^\/]*)/$1\/\L$2/' {{}} \;)".format(real_path))
+            else:
+                print("Skipping folder for mod {}".format(mod["folder"]))
 
     @to_thread
     def __create_mod_symlinks(self):
@@ -168,7 +190,7 @@ class ModUpdater:
 
     async def run_update(self, user, passwd, steam_2fa):
         print("Updating mods...")
-        if not self.__generate_steamcmd_runscript(user, passwd, steam_2fa):
+        if not await self.__generate_steamcmd_runscript(user, passwd, steam_2fa):
             print("No update required!")
             return False
         
