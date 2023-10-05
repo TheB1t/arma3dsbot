@@ -59,8 +59,8 @@ class ModUpdater:
 
     async def __generate_steamcmd_runscript(self, user, passwd, steam_2fa):
         lines = [
-            f"login {user} {passwd} {steam_2fa}",
             f"force_install_dir {A3_SERVER_DIR}",
+            f"login {user} {passwd} {steam_2fa}",
         ]
 
         
