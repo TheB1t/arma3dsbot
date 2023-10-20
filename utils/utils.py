@@ -3,6 +3,7 @@ import asyncio
 import typing
 import aiohttp
 from functools import wraps
+from db import Database
 
 def mutexed(func):
     def wrapper(self, *args, **kwargs):
@@ -19,8 +20,12 @@ def semaphored(func):
 def sessioned(func):
     @wraps(func)
     def wrapper(self, *args, **kwargs):
-        with self.Session() as session:
-            return func(self, session, *args, **kwargs)
+        db = self.db if isinstance(self.db, Database) else self
+        
+        with db.Session() as session:
+            output = func(self, session, *args, **kwargs)
+            session.close()
+            return output
     return wrapper
 
 def threaded(func):
@@ -40,3 +45,10 @@ async def fetch_url(url):
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 return await response.text()
+
+def get_file_extension(filename):
+    parts = filename.split(".")
+    if len(parts) > 1:
+        return parts[-1]
+    else:
+        return None

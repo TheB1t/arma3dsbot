@@ -1,14 +1,17 @@
-import subprocess
 import os
 import re
 import shutil
-import typing
-import functools
 import asyncio
 
-from utils import to_thread, fetch_url
 from datetime import datetime
-from urllib import request
+
+from discord.ext import commands
+
+from app import *
+from .priv_system import *
+from utils import LogLevel, to_thread, fetch_url, sessioned
+from db import Mod
+
 
 STEAM_CMD = "/home/arma3server/.steam/steamcmd/steamcmd.sh"
 
@@ -25,32 +28,65 @@ WORKSHOP_CHANGELOG_URL = "https://steamcommunity.com/sharedfiles/filedetails/cha
 
 RUNSCRIPT_PATH = f"{A3_SERVER_DIR}/updater_runscript.steamcmd"
 
-class ModUpdater:
+class ModUpdater(commands.Cog, AppModule):
 
-    def __init__(self):
-        self.mods = []
+    def __init__(self, app: App):
+        super(ModUpdater, self).__init__(app)
+
+        self.mod_list = []
+
+        for mod_folder, mod_id in self.getMods().items():
+            self.addMod(mod_folder, mod_id)
     
     def __del__(self):
         self.__clean()
 
+    @sessioned
+    def getMods(self, session):
+        mods = session.query(Mod).all()
+
+        tmp = {}
+        for mod in mods:
+            tmp[mod.folder_name] = mod.mod_id
+
+        return tmp
+    
+    @commands.hybrid_group(name="mods", fallback="update")
+    @PrivSystem.withPriv(PrivSystemLevels.IVENTOLOG)
+    async def mods_update(self, ctx: commands.Context, user, passwd, steam_2fa):
+        msg = await self.send(ctx, "Launching a mod update")
+        await self.run_update(user, passwd, steam_2fa)
+
+        status = '\n'.join(f"[{mod['status']}] {mod['folder']} ({mod['id']})" for mod in self.mod_list)
+        await msg.edit(content=f"Mod update status\n```{status}```")
+        await msg.delete(delay=10)
+
+    @mods_update.command(name="genline")
+    @PrivSystem.withPriv(PrivSystemLevels.OWNER)
+    async def mods_genline(self, ctx: commands.Context, folder: str):
+        line = ';'.join(f"{folder}/{mod['folder']}" for mod in self.mod_list)
+        await self.send(ctx, f"Modline generated:\n```{line}```")
+
     async def __check_one_mod(self, mod):
+        link_path = "{}/{}".format(A3_MODS_DIR, mod["folder"])
         path = "{}/{}".format(A3_WORKSHOP_DIR, mod["id"])
 
         if os.path.isdir(path):
             if await self.__mod_needs_update(mod["id"], path):
+                os.unlink(link_path)
                 shutil.rmtree(path)
             else:
                 mod["status"] = "UP-TO-DATE"
-                print("No update required for \"{}\" ({})... SKIPPING".format(mod["folder"], mod["id"]))
+                self.log("No update required for \"{}\" ({})... SKIPPING".format(mod["folder"], mod["id"]))
                 return [False, mod]
         
-        print("Required update for \"{}\" ({})".format(mod["folder"], mod["id"]))
+        self.log("Required update for \"{}\" ({})".format(mod["folder"], mod["id"]))
         return [True, mod]
     
     async def __check_mods_parallel(self):
         tasks = []
 
-        for mod in self.mods:
+        for mod in self.mod_list:
             task = asyncio.ensure_future(self.__check_one_mod(mod))
             tasks.append(task)
 
@@ -62,7 +98,6 @@ class ModUpdater:
             f"force_install_dir {A3_SERVER_DIR}",
             f"login {user} {passwd} {steam_2fa}",
         ]
-
         
         answers = await self.__check_mods_parallel()
 
@@ -71,6 +106,7 @@ class ModUpdater:
                 continue
 
             answer[1]["status"] = "UPDATED"
+            lines.append(f"workshop_download_item {A3_WORKSHOP_ID} {answer[1]['id']} validate")
             lines.append(f"workshop_download_item {A3_WORKSHOP_ID} {answer[1]['id']} validate")
 
         lines.append("quit")
@@ -91,12 +127,12 @@ class ModUpdater:
     @to_thread
     def __run_steamcmd(self):
         if not os.path.exists(RUNSCRIPT_PATH):
-            print("runscript not found")
+            self.log("runscript not found")
             return ""
         
         os.system(f"{STEAM_CMD} +runscript {RUNSCRIPT_PATH}")
 
-        for mod in self.mods:
+        for mod in self.mod_list:
             path = "{}/{}".format(A3_WORKSHOP_DIR, mod["id"])
 
             if not os.path.isdir(path):
@@ -117,18 +153,18 @@ class ModUpdater:
 
     @to_thread
     def __lowercase_workshop_dir(self):
-        for mod in self.mods:
+        for mod in self.mod_list:
             real_path = "{}/{}".format(A3_WORKSHOP_DIR, mod["id"])
 
             if mod["status"] == "UPDATED":
-                print("Convert files to lower for mod {}".format(mod["folder"]))
+                self.log("Convert files to lower for mod {}".format(mod["folder"]))
                 os.system("(cd {} && find . -depth -exec rename -v 's/(.*)\/([^\/]*)/$1\/\L$2/' {{}} \;)".format(real_path))
             else:
-                print("Skipping folder for mod {}".format(mod["folder"]))
+                self.log("Skipping folder for mod {}".format(mod["folder"]))
 
     @to_thread
     def __create_mod_symlinks(self):
-        for mod in self.mods:
+        for mod in self.mod_list:
             if mod["status"] != "UPDATED":
                 continue
 
@@ -138,9 +174,9 @@ class ModUpdater:
             if os.path.isdir(real_path):
                 if not os.path.islink(link_path):
                     os.symlink(real_path, link_path)
-                    print("Creating symlink '{}'...".format(link_path))
+                    self.log("Creating symlink '{}'...".format(link_path))
             else:
-                print("Mod '{}' does not exist! ({})".format(mod["folder"], real_path))
+                self.log("Mod '{}' does not exist! ({})".format(mod["folder"], real_path))
 
     @to_thread
     def __copy_keys(self):
@@ -150,17 +186,17 @@ class ModUpdater:
         for key in os.listdir(A3_KEYS_DIR):
             key_path = "{}/{}".format(A3_KEYS_DIR, key)
             if os.path.islink(key_path) and not os.path.exists(key_path):
-                print("Removing outdated server key '{}'".format(key))
+                self.log("Removing outdated server key '{}'".format(key))
                 os.unlink(key_path)
 
         # Update/add new key symlinks
-        for mod in self.mods:
+        for mod in self.mod_list:
             if mod["status"] != "UPDATED":
                 continue
 
             real_path = "{}/{}".format(A3_WORKSHOP_DIR, mod["id"])
             if not os.path.isdir(real_path):
-                print("Couldn't copy key for mod '{}', directory doesn't exist.".format(mod["folder"]))
+                self.log("Couldn't copy key for mod '{}', directory doesn't exist.".format(mod["folder"]))
             else:
                 dirlist = os.listdir(real_path)
                 keyDirs = [x for x in dirlist if re.search(key_regex, x)]
@@ -172,7 +208,7 @@ class ModUpdater:
                         key = keyDir
                         key_path = os.path.join(A3_KEYS_DIR, key)
                         if not os.path.exists(key_path):
-                            print("Creating symlink to key for mod '{}' ({})".format(mod["folder"], key))
+                            self.log("Creating symlink to key for mod '{}' ({})".format(mod["folder"], key))
                             os.symlink(os.path.join(real_path, key), key_path)
                     else:
                         # Key is in a folder
@@ -180,27 +216,27 @@ class ModUpdater:
                             real_key_path = os.path.join(real_path, keyDir, key)
                             key_path = os.path.join(A3_KEYS_DIR, key)
                             if not os.path.exists(key_path):
-                                print("Creating symlink to key for mod '{}' ({})".format(mod["folder"], key))
+                                self.log("Creating symlink to key for mod '{}' ({})".format(mod["folder"], key))
                                 os.symlink(real_key_path, key_path)
                 else:
-                    print("!! Couldn't find key folder for mod {} !!".format(mod["folder"]))
+                    self.log("!! Couldn't find key folder for mod {} !!".format(mod["folder"]))
 
     def addMod(self, mod_folder, mod_id):
-        self.mods.append({ "folder": mod_folder, "id": mod_id, "status": "UNKNOWN" })
+        self.mod_list.append({ "folder": mod_folder, "id": mod_id, "status": "UNKNOWN" })
 
     async def run_update(self, user, passwd, steam_2fa):
-        print("Updating mods...")
+        self.log("Updating mods...")
         if not await self.__generate_steamcmd_runscript(user, passwd, steam_2fa):
-            print("No update required!")
+            self.log("No update required!")
             return False
         
         await self.__run_steamcmd()
-        print("Converting uppercase files/folders to lowercase...")
+        self.log("Converting uppercase files/folders to lowercase...")
         await self.__lowercase_workshop_dir()
-        print("Creating symlinks...")
+        self.log("Creating symlinks...")
         await self.__create_mod_symlinks()
-        print("Copying server keys...")
+        self.log("Copying server keys...")
         await self.__copy_keys()
-        print("Clean...")
+        self.log("Clean...")
         self.__clean()
         return True
