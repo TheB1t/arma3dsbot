@@ -15,8 +15,9 @@ class MissionUploader(AppModule):
         self._check_settings_exist("mission_name")
         
         self.files = [
-            ("", "mission.sqm"),
-            ("", "cba_settings.sqf"),
+            ("",                "mission",          "sqm"),
+            ("",                "cba_settings",     "sqf"),
+            ("scripts/chat",    "commands",         "sqf"),
         ]
         self.bot.setAttachmentExtHandler("sqm", self.update)
         self.bot.setAttachmentExtHandler("sqf", self.update)
@@ -32,15 +33,20 @@ class MissionUploader(AppModule):
         pbo.unpack()
 
         for file in self.files:
-            basepath, name = file
+            basepath, name, ext = file
 
-            if (attachment.filename == name):
-                self.log(f"Updating file {mission_path}/{basepath}/{name}")
-                msg = await self.send(ctx, f"Detected {name}. Starting update...")
-                out = subprocess.run(f"wget -O {mission_path}/{mission_name}/{basepath}/{name} {attachment.url}", check=True, text=True, capture_output=True, shell=True)
-                self.log(out.stderr)
-                await msg.edit(content=f"{name} update finished!")
-                await msg.delete(delay=10)
+            _tmp = attachment.filename.split(".")
+            _ext = _tmp[-1]
+            _name = ".".join(_tmp[:-1])
+            
+            if (ext == _ext):
+                if (name == _name):
+                    self.log(f"Updating file {mission_path}/{basepath}/{name}.{ext}")
+                    msg = await self.send(ctx, f"Detected {name}.{ext}. Starting update...")
+                    out = subprocess.run(f"wget -O {mission_path}/{mission_name}/{basepath}/{name}.{ext} {attachment.url}", check=True, text=True, capture_output=True, shell=True)
+                    self.log(f"\n{out.stderr}")
+                    
+                    await self.edit(msg, f"{name} update finished!")
 
         pbo.update()
         pbo.pack()

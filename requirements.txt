@@ -2,3 +2,4 @@ steam
 discord.py
 sqlalchemy
 mysql-connector-python
+beautifulsoup4

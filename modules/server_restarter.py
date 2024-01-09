@@ -17,6 +17,7 @@ class ServerRestarter(commands.Cog, AppModule):
         try:
             self.bot.setRebootState()
             out = subprocess.run("bash restart.sh", check=True, text=True, capture_output=True, shell=True)
+            self.log(f"\n{out}")
         except subprocess.CalledProcessError as e:
             self.log(e, LogLevel.WARN)
             await msg.delete()

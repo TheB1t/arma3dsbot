@@ -1,3 +1,5 @@
+import asyncio 
+
 import discord
 from discord.ext import commands
 
@@ -9,9 +11,20 @@ class MiscCommands(commands.Cog, AppModule):
     def __init__(self, app: App):
         super(MiscCommands, self).__init__(app)
 
-    @commands.hybrid_group(name="cleanmessages", fallback="onlybot")
+    async def remove_list(self, ctx, messages):
+        channel = ctx.message.channel
+
+        if isinstance(channel, discord.DMChannel):
+            for msg in messages:
+                await msg.delete()
+                await asyncio.sleep(1)
+        else:
+            await channel.delete_messages(messages)
+
+    @commands.hybrid_group(name="cleanmsg", fallback="onlybot")
     @PrivSystem.withPriv(PrivSystemLevels.OWNER)
     async def clean(self, ctx: commands.Context):
+        self.log("Triggered cleanmsg onlybot")
         channel = ctx.message.channel
         
         messages = []
@@ -19,23 +32,30 @@ class MiscCommands(commands.Cog, AppModule):
         async for message in channel.history(limit=None):
             if message.author == self.bot.user:
                 messages.append(message)
-                self.log(f"Removing message [{ctx.guild.name}][{message.channel}][{message.created_at}] <{message.author}> -> {message.content}")
+                _server = message.guild.name if message.guild else 'DM'
+                _ch = 'DM' if _server == 'DM' else message.channel
 
-        await channel.delete_messages(messages)
+                self.log(f"Removing message [{_server}][{_ch}][{message.created_at}] <{message.author}> -> {message.content}")
+        
+        await self.remove_list(ctx, messages)
         await self.send(ctx, f"Removed {len(messages)}")
 
     @clean.command(name="all")
     @PrivSystem.withPriv(PrivSystemLevels.OWNER)
     async def cleanAll(self, ctx: commands.Context):
+        self.log("Triggered cleanmsg all")
         channel = ctx.message.channel
         
         messages = []
 
         async for message in channel.history(limit=None):
             messages.append(message)
-            self.log(f"Removing message [{ctx.guild.name}][{message.channel}][{message.created_at}] <{message.author}> -> {message.content}")
+            _server = message.guild.name if message.guild else 'DM'
+            _ch = 'DM' if _server == 'DM' else message.channel
 
-        await channel.delete_messages(messages)
+            self.log(f"Removing message [{_server}][{_ch}][{message.created_at}] <{message.author}> -> {message.content}")
+
+        await self.remove_list(ctx, messages)
         await self.send(ctx, f"Removed {len(messages)}")
 
     @commands.hybrid_command()

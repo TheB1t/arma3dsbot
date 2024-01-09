@@ -41,6 +41,11 @@ def to_thread(func: typing.Callable) -> typing.Coroutine:
         return await asyncio.to_thread(func, *args, **kwargs)
     return wrapper
 
+def to_task(func):
+    def wrapper(*args, **kwargs):
+        return asyncio.create_task(func(*args, **kwargs))
+    return wrapper
+
 async def fetch_url(url):
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:

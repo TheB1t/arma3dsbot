@@ -21,6 +21,7 @@ class Mod(Base, Wrapper):
     id = sa.Column(sa.Integer, primary_key=True, autoincrement=True)
     folder_name = sa.Column(sa.Text, nullable=False)
     mod_id = sa.Column(sa.Text, nullable=False)
+    status = sa.Column(sa.Integer, nullable=True, default=0)
 
 class ZeusUser(Base, Wrapper):
     __tablename__ = "player_access"

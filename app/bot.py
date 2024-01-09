@@ -123,12 +123,27 @@ class StatusBot(commands.Bot, Log):
         self.log(f"Register file extension handler: {ext} -> {func.__qualname__ }")
         self.__attachment_handlers[ext] = func
 
-    async def send(self, ctx: commands.Context, message: str):
-        if (ctx.prefix == '/'):
-            return await ctx.send(message, ephemeral=True)
-        
-        return await ctx.send(message, delete_after=20)
+    def getMessageString(self, ctx: commands.Context):
+        message = ctx.message
+        _server = message.guild.name if message.guild else 'DM'
+        _ch = 'DM' if _server == 'DM' else message.channel
+        _msg = message.content if message.content else 'empty'
+        _att = [f"{a.filename} # {a.size}" for a in message.attachments]
+        return f"[{_server}][{_ch}] <{message.author}> -> {_msg} ({_att})"
 
+    async def send(self, ctx: commands.Context, message: str, delete_after=None, ephemeral=True):
+        if (ctx.prefix == '/'):
+            return await ctx.send(message, ephemeral=ephemeral)
+        
+        return await ctx.send(message, delete_after=delete_after)
+
+
+    async def edit(self, msg: discord.Message, message: str, delete_after=None):
+        await msg.edit(content=message)
+        
+        if delete_after and not msg.flags.ephemeral:
+            await msg.delete(delay=delete_after)
+    
     # [BOT] Events
     async def on_ready(self):
         self.log(f"[AUTH] ({self.user.id}) <{self.user.name}> logged in")
@@ -175,15 +190,14 @@ class StatusBot(commands.Bot, Log):
                 func = self.__attachment_handlers[ext]
                 await func(ctx, attachment)
 
-        if len(message.content):
-            if self.command_prefix != message.content[0]:
-                return
+        if not len(message.content):
+            return
         
-        _server = message.guild.name if message.guild else 'DM'
-        _ch = 'DM' if _server == 'DM' else message.channel
-        _msg = message.content if message.content else 'empty'
-        _att = [f"{a.filename} # {a.size}" for a in message.attachments]
-        self.log(f"[{_server}][{_ch}][{message.created_at}] <{message.author}> -> {_msg} ({_att})")
+        if ctx.prefix != self.command_prefix:
+            return
+        
+        _msg = self.getMessageString(ctx)
+        self.log(_msg)
             
         await self.deleteSourceMessage(ctx)
         await self.process_commands(message)
@@ -191,6 +205,8 @@ class StatusBot(commands.Bot, Log):
     async def deleteSourceMessage(self, ctx: commands.Context):
         try:
             if not isinstance(ctx.message.channel, discord.DMChannel):
+                _msg = self.getMessageString(ctx)
+                self.log(f"Deleting message {_msg}")
                 await ctx.message.delete()
         except:
             pass

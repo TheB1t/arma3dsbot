@@ -3,6 +3,7 @@ from .utils import semaphored
 from .utils import sessioned
 from .utils import threaded
 from .utils import to_thread
+from .utils import to_task
 from .utils import fetch_url
 from .utils import get_file_extension
 

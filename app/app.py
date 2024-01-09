@@ -13,9 +13,12 @@ class AppModule(Log):
         super(AppModule, self).__init__()
         self.app = app
 
-    async def send(self, ctx: commands.Context, message: str):
-        return await self.bot.send(ctx, message)
+    async def send(self, ctx: commands.Context, message: str, delay=20, ephemeral=True):
+        return await self.bot.send(ctx, message, delay, ephemeral)
 
+    async def edit(self, msg: discord.Message, message: str, delay=10):
+        return await self.bot.edit(msg, message, delay)
+    
     @property
     def bot(self):
         return self.app.bot
@@ -91,4 +94,4 @@ class App(Log):
                 await self.bot.add_cog(inst)
 
     def run(self):
-        self.bot.run(self.settings["token"], log_handler=None)
+        self.bot.run(self.settings["token"])

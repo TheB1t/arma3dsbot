@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, Table, MetaData
 from sqlalchemy.orm import sessionmaker
 import threading
 
@@ -13,3 +13,10 @@ class Database:
         self.Session = sessionmaker(bind=self.engine)
 
         Base.metadata.create_all(self.engine)
+        
+    def getTable(self, name):
+        metadata = MetaData()
+        return Table(name, metadata, autoload_with=self.engine)
+    
+    def dropTable(self, table):
+        table.delete(self.engine)
