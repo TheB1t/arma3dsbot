@@ -132,17 +132,23 @@ class StatusBot(commands.Bot, Log):
         return f"[{_server}][{_ch}] <{message.author}> -> {_msg} ({_att})"
 
     async def send(self, ctx: commands.Context, message: str, delete_after=None, ephemeral=True):
-        if (ctx.prefix == '/'):
-            return await ctx.send(message, ephemeral=ephemeral)
-        
-        return await ctx.send(message, delete_after=delete_after)
+        try:
+            if (ctx.prefix == '/'):
+                return await ctx.send(message, ephemeral=ephemeral)
+            
+            return await ctx.send(message, delete_after=delete_after)
+        except Exception as e:
+            self.log(str(e), LogLevel.ERR)
 
 
     async def edit(self, msg: discord.Message, message: str, delete_after=None):
-        await msg.edit(content=message)
-        
-        if delete_after and not msg.flags.ephemeral:
-            await msg.delete(delay=delete_after)
+        try:
+            await msg.edit(content=message)
+            
+            if delete_after and not msg.flags.ephemeral:
+                await msg.delete(delay=delete_after)
+        except Exception as e:
+            self.log(str(e), LogLevel.ERR)
     
     # [BOT] Events
     async def on_ready(self):
@@ -185,7 +191,7 @@ class StatusBot(commands.Bot, Log):
         for attachment in message.attachments:
             ext = get_file_extension(attachment.filename)
             if ext in self.__attachment_handlers:
-                await self.deleteSourceMessage(ctx)
+                # await self.deleteSourceMessage(ctx)
     
                 func = self.__attachment_handlers[ext]
                 await func(ctx, attachment)
@@ -257,7 +263,10 @@ class StatusBot(commands.Bot, Log):
 
     def getOnlineFields(self, serverInfo: dict, serverPlayers: list):
         if (len(serverPlayers) > 0):
-            players = '\n'.join([f"* {item['name']} ({int(item['duration'] // 3600):02d}:{int((item['duration'] % 3600) // 60):02d})" for item in serverPlayers])
+            if (len(serverPlayers) > 30):
+                players = "Невозможно отобразить всех игроков"
+            else:
+                players = '\n'.join([f"* {item['name']} ({int(item['duration'] // 3600):02d}:{int((item['duration'] % 3600) // 60):02d})" for item in serverPlayers])
         else:
             players = "Сервер пуст"
 
