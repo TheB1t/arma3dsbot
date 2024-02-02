@@ -3,9 +3,6 @@
     "displayed_ip": "",
     "base_port": 2302,
 
-    "mission_path": "",
-    "mission_name": "",
-    
     "db_ip": "",
     "db_port": 3306,
     "db_user": "",
@@ -15,5 +12,12 @@
     "service_role_id": 0,
     "channel_id": 0,
 
-    "token": ""
+    "token": "",
+
+    "mission_path": "",
+    "mission_name": "",
+
+    "restart_cmd": "",
+    "start_cmd": "",
+    "stop_cmd": ""
 }

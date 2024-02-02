@@ -13,7 +13,7 @@ from discord.ext import commands
 
 from app import *
 from .priv_system import *
-from utils import LogLevel, to_thread, to_task, fetch_url, sessioned
+from utils import LogLevel, to_task, fetch_url
 from db import Mod
 
 
@@ -46,11 +46,12 @@ class ModStatus(Enum):
     
 class ModUpdater(commands.Cog, AppModule):
 
-    def __init__(self, app: App):
-        super(ModUpdater, self).__init__(app)
-
-        self._check_settings_exist("steam_user")
-        self._check_settings_exist("steam_password")
+    def __init__(self, app: App):       
+        super(ModUpdater, self).__init__(app,
+        [
+            "steam_user",
+            "steam_password"
+        ])
 
         self.mod_list = []
 
@@ -61,7 +62,7 @@ class ModUpdater(commands.Cog, AppModule):
         self.__clean()
     
     @commands.hybrid_group(name="mods", fallback="update")
-    @PrivSystem.withPriv(PrivSystemLevels.OWNER)
+    @PrivSystem.withPriv(PrivSystemLevels.ADMIN)
     async def mods_update(self, ctx: commands.Context):       
         steam_user = self.settings["steam_user"]
         steam_password = self.settings["steam_password"]
@@ -72,14 +73,21 @@ class ModUpdater(commands.Cog, AppModule):
     @PrivSystem.withPriv(PrivSystemLevels.OWNER)
     async def mods_genline(self, ctx: commands.Context, folder: str):
         line = '\;'.join(f"{folder}/{mod['folder']}" for mod in self.mod_list)
-        await self.send(ctx, f"Modline generated:\n```{line}```")
-
+        await self.send_pretty(ctx, PrettyType.INFO, title="Modline generated", message="```{line}```")
+        
     @PrivSystem.withPriv(PrivSystemLevels.OWNER, False)
     async def loadPreset(self, ctx: commands.Context, attachment: discord.Attachment):
-        msg = await self.send(ctx, f"Detected preset file. Starting update...")
+        msg = await self.send_pretty(ctx, PrettyType.INFO, message="Detected preset file. Starting update...")
         
-        out = subprocess.run(f"wget -O /tmp/preset.html {attachment.url}", check=True, text=True, capture_output=True, shell=True)
-        self.log(f"\n{out.stderr}")
+        try:
+            process = await asyncio.create_subprocess_exec("wget", "-O", "/tmp/preset.html", attachment.url, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            exitcode = await process.wait()
+            
+            self.log(f"Preset downloading done with exitcode {exitcode}")
+        except subprocess.CalledProcessError as e:
+            self.log(str(e), LogLevel.WARN)
+            await msg.delete()
+            raise BotInternalException(f"Fatal error during downloading preset!")
         
         try:
             with open("/tmp/preset.html", 'r') as file:
@@ -251,7 +259,18 @@ class ModUpdater(commands.Cog, AppModule):
             return
 
         parent_directory = os.path.dirname(directory_path)
-        
+
+        for root, dirs, files in os.walk(directory_path):
+            for folder in dirs:
+                old_path = os.path.join(root, folder)
+                new_folder = folder.lower()
+                new_path = os.path.join(root, new_folder)
+
+                os.rename(old_path, new_path)
+
+                relative_path = os.path.relpath(root, parent_directory)
+                # print(f"Folder renamed: {relative_path}/{folder} -> {new_folder}")
+
         for root, dirs, files in os.walk(directory_path):
             for filename in files:
                 old_path = os.path.join(root, filename)
@@ -261,17 +280,7 @@ class ModUpdater(commands.Cog, AppModule):
                 os.rename(old_path, new_path)
                 
                 relative_path = os.path.relpath(root, parent_directory)
-                print(f"File renamed: {relative_path}/{filename} -> {new_filename}")
-
-            for folder in dirs:
-                old_path = os.path.join(root, folder)
-                new_folder = folder.lower()
-                new_path = os.path.join(root, new_folder)
-
-                os.rename(old_path, new_path)
-
-                relative_path = os.path.relpath(root, parent_directory)
-                print(f"Folder renamed: {relative_path}/{folder} -> {new_folder}")
+                # print(f"File renamed: {relative_path}/{filename} -> {new_filename}")
 
     async def __lowercase_workshop_dir(self):
         for mod in self.mod_list:
@@ -312,7 +321,7 @@ class ModUpdater(commands.Cog, AppModule):
 
         # Update/add new key symlinks
         for mod in self.mod_list:
-            if self.checkModStatus(mod, ModStatus.UPDATED) or self.checkModStatus(mod, ModStatus.UP_TO_DATE):
+            if not self.checkModStatus(mod, ModStatus.UPDATED) and not self.checkModStatus(mod, ModStatus.UP_TO_DATE):
                 continue
 
             mod_folder = mod.get("folder")
@@ -404,7 +413,7 @@ class ModUpdater(commands.Cog, AppModule):
             self.setModStatus(mod, ModStatus.VALIDATING_NEW)
             
     async def run_update(self, ctx, user, passwd):   
-        msg = await self.send(ctx, "Launching a mod update", None)
+        msg = await self.send(ctx, "Launching a mod update")
 
         _mods = [mod.get("id") for mod in self.mod_list]
         
@@ -435,10 +444,10 @@ class ModUpdater(commands.Cog, AppModule):
             text = f"Mod update status (UPDATING)\n```{self.__generate_mod_list()}```";
             
             try:
-                await self.edit(msg, text, None)
+                await self.edit(msg, text)
             except:
                 await msg.delete()
-                msg = await self.send(ctx, text, None)
+                msg = await self.send(ctx, text)
                 
             await asyncio.sleep(10)
             
@@ -450,17 +459,17 @@ class ModUpdater(commands.Cog, AppModule):
             text = f"Mod update status (VALIDATING)\n```{self.__generate_mod_list()}```";
             
             try:
-                await self.edit(msg, text, None)
+                await self.edit(msg, text)
             except:
                 await msg.delete()
-                msg = await self.send(ctx, text, None)
+                msg = await self.send(ctx, text)
                 
             await asyncio.sleep(10)
         
         await validate_task
         
         await msg.delete()
-        await self.send(ctx, f"Mod update status (DONE)\n```{self.__generate_mod_list()}```", None)
+        await self.send(ctx, f"Mod update status (DONE)\n```{self.__generate_mod_list()}```")
         
         self.log("Converting uppercase files/folders to lowercase...")
         await self.__lowercase_workshop_dir()
@@ -475,37 +484,35 @@ class ModUpdater(commands.Cog, AppModule):
 #--------------------------------------------------------------#
 #                           MISC                               #
 #--------------------------------------------------------------#
-    
-    def __getModByID(self, session, mod_id):
-        return session.query(Mod).filter_by(mod_id=mod_id).first()
-    
-    @sessioned
-    def __setModStatus(self, session, mod_id, status):
-        mod = self.__getModByID(session, mod_id)
-
-        if mod:
-            mod.status = status.value
-            session.commit()
-            
-    @sessioned
-    def __loadModList(self, session):
-        mods = session.query(Mod).all()
         
-        for mod in mods:
-            self.addMod(mod.folder_name, mod.mod_id, ModStatus(mod.status))
+    def __setModStatus(self, mod_id, status):
+        with self.db.session as session:
+            mod = session.query(Mod).filter_by(mod_id=mod_id).first()
+            
+            if mod:
+                mod.status = status.value
+                session.commit()
+            
+    def __loadModList(self):
+        with self.db.session as session:
+            mods = session.query(Mod).all()
+            
+            for mod in mods:
+                self.addMod(mod.folder_name, mod.mod_id, ModStatus(mod.status))
 
-    @sessioned
-    def __addMod(self, session, folder_name, mod_id):    
-        mod = self.__getModByID(session, mod_id)
+    def __addMod(self, folder_name, mod_id):    
+        with self.db.session as session:
+            mod = session.query(Mod).filter_by(mod_id=mod_id).first()
 
-        if not mod:
-            mod = Mod(folder_name=folder_name, mod_id=mod_id)
-            session.add(mod)
-            session.commit()
-    
+            if not mod:
+                mod = Mod(folder_name=folder_name, mod_id=mod_id)
+                session.add(mod)
+                session.commit()
+            
     def __cleanTable(self):
-        table = self.db.getTable(Mod.__tablename__)
-        table.delete()
+        with self.db.session as session:
+            session.query(Mod).delete()
+            session.commit()
     
     def __generate_mod_list(self):
         # return '\n'.join("[{}] {} ({}, took {:.2f} s)".format(mod.get("status")._name_, mod.get("folder"), mod.get("id"), self.getModTook(mod)) for mod in self.mod_list)

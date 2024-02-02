@@ -1,4 +1,3 @@
-import socket
 from steam import game_servers as gs
 
 class Server:
@@ -10,18 +9,38 @@ class Server:
     def getInfo(self):
         try:
             return gs.a2s_info((self.ip, self.query_port))
-        except (RuntimeError, socket.timeout):
-            raise RuntimeError("Failed to get server info")
+        except Exception:
+            return {}
 
     def getPlayers(self):
         try:
             return gs.a2s_players((self.ip, self.query_port))
-        except (RuntimeError, socket.timeout):
-            raise RuntimeError("Failed to get server players")
+        except Exception:
+            return []
         
     def ping(self):
-        try:
-            self.getInfo()
-            return True
-        except:
+        if len(self.getInfo()) == 0:
             return False
+        else:
+            return True
+    
+    def get(self):
+        serverInfo = self.getInfo()
+        serverPlayers = self.getPlayers()
+        
+        if "name" not in serverInfo:
+            serverInfo["name"] = "Unknown"
+
+        if "map" not in serverInfo:
+            serverInfo["map"] = "Unknown"
+
+        if "game" not in serverInfo:
+            serverInfo["game"] = "Unknown"
+            
+        if "players" not in serverInfo:
+            serverInfo["players"] = 0
+
+        if "max_players" not in serverInfo:
+            serverInfo["max_players"] = 0
+
+        return (serverInfo, serverPlayers)

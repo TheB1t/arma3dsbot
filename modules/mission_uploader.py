@@ -8,11 +8,12 @@ from utils import LogLevel, BotInternalException, PBOManipulator
 from .priv_system import PrivSystem, PrivSystemLevels
 
 class MissionUploader(AppModule):
-    def __init__(self, app: App):
-        super(MissionUploader, self).__init__(app)
-
-        self._check_settings_exist("mission_path")
-        self._check_settings_exist("mission_name")
+    def __init__(self, app: App):       
+        super(MissionUploader, self).__init__(app,
+        [
+            "mission_path",
+            "mission_name"
+        ])
         
         self.files = [
             ("",                "mission",          "sqm"),

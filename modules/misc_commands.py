@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands
 
 from app import App, AppModule
-from utils import LogLevel, BotInternalException
+from utils import LogLevel, BotInternalException, split_array
 from .priv_system import PrivSystem, PrivSystemLevels
 
 class MiscCommands(commands.Cog, AppModule):
@@ -27,18 +27,20 @@ class MiscCommands(commands.Cog, AppModule):
         self.log("Triggered cleanmsg onlybot")
         channel = ctx.message.channel
         
-        messages = []
-
-        async for message in channel.history(limit=None):
-            if message.author == self.bot.user:
-                messages.append(message)
+        messages = [message async for message in channel.history(limit=10000)]
+        messages_filtered = [message for message in messages if message.author == self.bot.user and message.id != ctx.message.id]
+        message_arrays = split_array(messages_filtered, 100)
+        
+        for message_array in message_arrays:
+            for message in message_array:
                 _server = message.guild.name if message.guild else 'DM'
                 _ch = 'DM' if _server == 'DM' else message.channel
 
                 self.log(f"Removing message [{_server}][{_ch}][{message.created_at}] <{message.author}> -> {message.content}")
         
-        await self.remove_list(ctx, messages)
-        await self.send(ctx, f"Removed {len(messages)}")
+            await self.remove_list(ctx, message_array)
+            
+        await self.send(ctx, f"Removed {len(messages)} messages")
 
     @clean.command(name="all")
     @PrivSystem.withPriv(PrivSystemLevels.OWNER)
@@ -46,26 +48,23 @@ class MiscCommands(commands.Cog, AppModule):
         self.log("Triggered cleanmsg all")
         channel = ctx.message.channel
         
-        messages = []
+        messages = [message async for message in channel.history(limit=10000)]
+        messages_filtered = [message for message in messages if message.id != ctx.message.id]
+        message_arrays = split_array(messages_filtered, 100)
+        
+        for message_array in message_arrays:
+            for message in message_array:
+                _server = message.guild.name if message.guild else 'DM'
+                _ch = 'DM' if _server == 'DM' else message.channel
 
-        async for message in channel.history(limit=None):
-            messages.append(message)
-            _server = message.guild.name if message.guild else 'DM'
-            _ch = 'DM' if _server == 'DM' else message.channel
-
-            self.log(f"Removing message [{_server}][{_ch}][{message.created_at}] <{message.author}> -> {message.content}")
-
-        await self.remove_list(ctx, messages)
-        await self.send(ctx, f"Removed {len(messages)}")
+                self.log(f"Removing message [{_server}][{_ch}][{message.created_at}] <{message.author}> -> {message.content}")
+        
+            await self.remove_list(ctx, message_array)
+            
+        await self.send(ctx, f"Removed {len(messages)} messages")
 
     @commands.hybrid_command()
     @PrivSystem.withPriv(PrivSystemLevels.OWNER)
     async def sync(self, ctx: commands.Context):
         synced = await self.bot.tree.sync()
         await self.send(ctx, f"Synced {len(synced)} global commands")
-
-    @commands.hybrid_command()
-    @PrivSystem.withPriv(PrivSystemLevels.OWNER)
-    async def maintenance_toggle(self, ctx: commands.Context):
-        mode = self.bot.toggleMaintenanceMode()
-        await self.send(ctx, f"Maintenance mode {'enabled' if mode else 'disabled'}")

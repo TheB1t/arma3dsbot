@@ -3,11 +3,11 @@ from modules import *
 
 _app = app.App()
 
-_app.addModule(PrivSystem, "PrivSystem")
-_app.addModule(ModUpdater, "ModUpdater")
-_app.addModule(ServerRestarter, "ServerRestarter")
-_app.addModule(MissionUploader, "MissionUploader")
-_app.addModule(MiscCommands, "MiscCommands")
-_app.addModule(ZeusManager, "ZeusManager")
+_app.addModule(PrivSystem)
+_app.addModule(ModUpdater)
+_app.addModule(ServerManager)
+_app.addModule(MissionUploader)
+_app.addModule(MiscCommands)
+_app.addModule(PlayerManager)
 
 _app.run()

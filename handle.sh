@@ -1,0 +1,5 @@
+#/bin/bash
+
+unset TMUX
+
+$@

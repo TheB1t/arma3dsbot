@@ -4,35 +4,39 @@ import discord
 from discord.ext import commands
 
 from utils import Log, LogLevel
-from .bot import StatusBot
+from .bot import StatusBot, PrettyType
 from .server import Server
 from db import Database
 
 class AppModule(Log):
-    def __init__(self, app):
+    def __init__(self, app, required_settings=[]):
         super(AppModule, self).__init__()
         self.app = app
+        self.name = self.__class__.__name__    
+        self.required_settings = required_settings
 
-    async def send(self, ctx: commands.Context, message: str, delay=20, ephemeral=True):
-        return await self.bot.send(ctx, message, delay, ephemeral)
+        self.app._check_required_settings()
 
-    async def edit(self, msg: discord.Message, message: str, delay=10):
-        return await self.bot.edit(msg, message, delay)
+    async def send_pretty(self, ctx: commands.Context, type: PrettyType, **kwargs):
+        return await self.bot.send_pretty(ctx, type, **kwargs)
+    
+    async def send(self, ctx: commands.Context, message: str, **kwargs):
+        return await self.bot.send(ctx, message, **kwargs)
+
+    async def edit(self, msg: discord.Message, message: str, **kwargs):
+        return await self.bot.edit(msg, message, **kwargs)
     
     @property
-    def bot(self):
+    def bot(self) -> StatusBot:
         return self.app.bot
 
     @property
-    def db(self):
+    def db(self) -> Database:
         return self.app.db
 
     @property
-    def settings(self):
+    def settings(self) -> dict:
         return self.app.settings
-    
-    def _check_settings_exist(self, p):
-        return self.app._check_settings_exist(p)
     
 class App(Log):
     def __init__(self):
@@ -40,20 +44,25 @@ class App(Log):
             with open("settings.json", 'r') as file:
                 self.settings = json.load(file)
 
-                self._check_settings_exist("ip")
-                self._check_settings_exist("displayed_ip")
-                self._check_settings_exist("base_port")
+            self.required_settings = [
+                "ip",
+                "displayed_ip",
+                    
+                "base_port",
+                    
+                "db_ip",
+                "db_port",
+                "db_user",
+                "db_pass",
+                "db_db",
+                    
+                "service_role_id",
+                "channel_id",
+                    
+                "token"
+            ]
 
-                self._check_settings_exist("db_ip")
-                self._check_settings_exist("db_port")
-                self._check_settings_exist("db_user")
-                self._check_settings_exist("db_pass")
-                self._check_settings_exist("db_db")
-
-                self._check_settings_exist("service_role_id")
-                self._check_settings_exist("channel_id")
-
-                self._check_settings_exist("token")
+            self._check_required_settings()
 
         except FileNotFoundError:
             self.log("Can't find settings.json", LogLevel.FATAL)
@@ -77,12 +86,16 @@ class App(Log):
     def _check_settings_exist(self, p):
         if not (p in self.settings):
             raise RuntimeError(f"Missing setting {p} in settings.json")
-    
-    def addModule(self, c, name):
+
+    def _check_required_settings(self):
+        for setting in self.required_settings:
+            self._check_settings_exist(setting)
+            
+    def addModule(self, c):
         try:
-            self.log(f"Adding module {name} to app")
             inst = c(self)
-            self.modules[name] = inst
+            self.log(f"Adding module {inst.name} to app")
+            self.modules[inst.name] = inst
         except RuntimeError as e:
             self.log(str(e), LogLevel.FATAL)
             exit(1)

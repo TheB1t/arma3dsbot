@@ -1,2 +1,2 @@
 from .db import Database
-from .db_tables import Admin, Mod, ZeusUser, Base
+from .db_tables import BotUser, Mod, Player, Base

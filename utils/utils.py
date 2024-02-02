@@ -2,6 +2,7 @@ import threading
 import asyncio
 import typing
 import aiohttp
+from discord.ext import commands
 from functools import wraps
 from db import Database
 
@@ -15,17 +16,6 @@ def semaphored(func):
     def wrapper(self, *args, **kwargs):
         with self._semaphore:
             return func(self, *args, **kwargs)
-    return wrapper
-
-def sessioned(func):
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        db = self.db if isinstance(self.db, Database) else self
-        
-        with db.Session() as session:
-            output = func(self, session, *args, **kwargs)
-            session.close()
-            return output
     return wrapper
 
 def threaded(func):
@@ -57,3 +47,6 @@ def get_file_extension(filename):
         return parts[-1]
     else:
         return None
+    
+def split_array(array, chunk_size):
+    return [array[i:i+chunk_size] for i in range(0, len(array), chunk_size)]
