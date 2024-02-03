@@ -40,8 +40,9 @@ class ModStatus(Enum):
     IN_PROGRESS             = 3
     WAIT_VALIDATION         = 4
     VALIDATING              = 5
-    UPDATED                 = 6
-    FAILED                  = 7
+    VALIDATING_NEW          = 6
+    UPDATED                 = 7
+    FAILED                  = 8
     
 class ModUpdater(commands.Cog, AppModule):
 
@@ -83,6 +84,7 @@ class ModUpdater(commands.Cog, AppModule):
         try:
             with open("/tmp/preset.html", 'r') as file:
                 self.__cleanTable()
+                self.mod_list = []
                 
                 soup = BeautifulSoup(file.read(), 'html.parser')
                 
@@ -99,6 +101,7 @@ class ModUpdater(commands.Cog, AppModule):
                     else:
                         formatted_mod_name = mod_name
 
+                    self.log(f"Add mod from preset: {formatted_mod_name} ({mod_id})")
                     self.__addMod(formatted_mod_name, mod_id)
                     
             self.__loadModList()
@@ -258,14 +261,24 @@ class ModUpdater(commands.Cog, AppModule):
                 os.rename(old_path, new_path)
                 
                 relative_path = os.path.relpath(root, parent_directory)
-                print(f"Renamed: {relative_path}/{filename} -> {new_filename}")
-            
+                print(f"File renamed: {relative_path}/{filename} -> {new_filename}")
+
+            for folder in dirs:
+                old_path = os.path.join(root, folder)
+                new_folder = folder.lower()
+                new_path = os.path.join(root, new_folder)
+
+                os.rename(old_path, new_path)
+
+                relative_path = os.path.relpath(root, parent_directory)
+                print(f"Folder renamed: {relative_path}/{folder} -> {new_folder}")
+
     async def __lowercase_workshop_dir(self):
         for mod in self.mod_list:
             mod_folder = mod.get("folder")
             real_path = mod.get("real_path")
             
-            if self.checkModStatus(mod, ModStatus.UP_TO_DATE):
+            if self.checkModStatus(mod, ModStatus.UPDATED) or self.checkModStatus(mod, ModStatus.UP_TO_DATE):
                 self.log(f"Convert files to lower for mod {mod_folder}")
                 self.__rename_files_to_lowercase(real_path)
             else:
@@ -273,7 +286,7 @@ class ModUpdater(commands.Cog, AppModule):
 
     async def __create_mod_symlinks(self):
         for mod in self.mod_list:
-            if not self.checkModStatus(mod, ModStatus.UP_TO_DATE):
+            if not self.checkModStatus(mod, ModStatus.UPDATED) and not self.checkModStatus(mod, ModStatus.UP_TO_DATE):
                 continue
 
             mod_folder = mod.get("folder")
@@ -299,7 +312,7 @@ class ModUpdater(commands.Cog, AppModule):
 
         # Update/add new key symlinks
         for mod in self.mod_list:
-            if not self.checkModStatus(mod, ModStatus.UP_TO_DATE):
+            if self.checkModStatus(mod, ModStatus.UPDATED) or self.checkModStatus(mod, ModStatus.UP_TO_DATE):
                 continue
 
             mod_folder = mod.get("folder")
@@ -364,7 +377,10 @@ class ModUpdater(commands.Cog, AppModule):
         self.log(f"Validated mod {modid}")
                 
         mod = self.findModByID(modid)
-        self.setModStatus(mod, ModStatus.UP_TO_DATE)
+        if self.checkModStatus(mod, ModStatus.VALIDATING):
+            self.setModStatus(mod, ModStatus.UP_TO_DATE)
+        else:
+            self.setModStatus(mod, ModStatus.UPDATED)
 
     def __validate_error(self, modid, err):
         self.log(f"Failed to validate mod {modid}: {err}")
@@ -382,11 +398,23 @@ class ModUpdater(commands.Cog, AppModule):
         self.log(f"Validating mod {modid}...")
                 
         mod = self.findModByID(modid)
-        self.setModStatus(mod, ModStatus.VALIDATING)
-             
+        if self.checkModStatus(mod, ModStatus.WAIT_VALIDATION):
+            self.setModStatus(mod, ModStatus.VALIDATING)
+        else:
+            self.setModStatus(mod, ModStatus.VALIDATING_NEW)
+            
     async def run_update(self, ctx, user, passwd):   
-        msg = await self.send(ctx, "Launching a mod update", None, False)
+        msg = await self.send(ctx, "Launching a mod update", None)
 
+        _mods = [mod.get("id") for mod in self.mod_list]
+        
+        if os.path.exists(A3_WORKSHOP_DIR):
+            for item in os.listdir(A3_WORKSHOP_DIR):
+                item_path = os.path.join(A3_WORKSHOP_DIR, item)
+                if os.path.isdir(item_path) and item not in _mods:
+                    self.log(f"Removing obsolete mod: {item}")
+                    shutil.rmtree(item_path)
+                        
         self.log("Generating runscript...")
         if not await self.__generate_steamcmd_runscript(user, passwd):
             self.log("No update required!")
@@ -404,20 +432,35 @@ class ModUpdater(commands.Cog, AppModule):
         main_task = self.__run_steamcmd(MAIN_RUNSCRIPT_PATH, self.__update_success, self.__update_error, self.__update_timeout, self.__update_start)
         
         while not main_task.done():
-            await self.edit(msg, f"Mod update status (UPDATING)\n```{self.__generate_mod_list()}```", None)
-            await asyncio.sleep(2)
+            text = f"Mod update status (UPDATING)\n```{self.__generate_mod_list()}```";
+            
+            try:
+                await self.edit(msg, text, None)
+            except:
+                await msg.delete()
+                msg = await self.send(ctx, text, None)
+                
+            await asyncio.sleep(10)
             
         await main_task
         
         validate_task = self.__run_steamcmd(VALIDATE_RUNSCRIPT_PATH, self.__validate_success, self.__validate_error, self.__validate_timeout, self.__validate_start)
         
         while not validate_task.done():
-            await self.edit(msg, f"Mod update status (VALIDATING)\n```{self.__generate_mod_list()}```", None)
-            await asyncio.sleep(2)
+            text = f"Mod update status (VALIDATING)\n```{self.__generate_mod_list()}```";
+            
+            try:
+                await self.edit(msg, text, None)
+            except:
+                await msg.delete()
+                msg = await self.send(ctx, text, None)
+                
+            await asyncio.sleep(10)
         
         await validate_task
         
-        await self.edit(msg, f"Mod update status (DONE)\n```{self.__generate_mod_list()}```", None)
+        await msg.delete()
+        await self.send(ctx, f"Mod update status (DONE)\n```{self.__generate_mod_list()}```", None)
         
         self.log("Converting uppercase files/folders to lowercase...")
         await self.__lowercase_workshop_dir()
@@ -465,8 +508,9 @@ class ModUpdater(commands.Cog, AppModule):
         table.delete()
     
     def __generate_mod_list(self):
-        return '\n'.join("[{}] {} ({}, took {:.2f} s)".format(mod.get("status")._name_, mod.get("folder"), mod.get("id"), self.getModTook(mod)) for mod in self.mod_list)
-
+        # return '\n'.join("[{}] {} ({}, took {:.2f} s)".format(mod.get("status")._name_, mod.get("folder"), mod.get("id"), self.getModTook(mod)) for mod in self.mod_list)
+        return '\n'.join("[{}] {} (took {:.2f} s)".format(mod.get("status")._name_, mod.get("id"), self.getModTook(mod)) for mod in self.mod_list)
+        
     def addMod(self, mod_folder, mod_id, status = ModStatus.UNKNOWN):
         self.log(f"Adding mod {mod_folder} ({mod_id})")
         self.mod_list.append({ 
